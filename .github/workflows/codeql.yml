@@ -44,7 +44,7 @@ jobs:
       fail-fast: false
 
       matrix:
-        os: [ ubuntu-latest, windows-latest]
+        os: [ ubuntu-24.04, windows-latest]
         include:
         - language: go
           build-mode: autobuild
