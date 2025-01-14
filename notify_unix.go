@@ -5,7 +5,6 @@ package notify_lock_session
 import (
 	"fmt"
 	"github.com/godbus/dbus/v5"
-	"log"
 	"os"
 	"time"
 )
@@ -33,7 +32,9 @@ func Subscribe(lock chan Lock, closeChan chan bool) (e error) {
 			dbus.WithMatchMember(param.member),
 		)
 		if err != nil {
-			log.Fatalf("Error subscribe on event: %v", err)
+			e = err
+			return
+			//log.Fatalf("Error subscribe on event: %v", err)
 			//return err
 		}
 
