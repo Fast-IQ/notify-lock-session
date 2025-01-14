@@ -1,2 +1,4 @@
+github.com/godbus/dbus/v5 v5.1.0 h1:4KLkAxT3aOY8Li4FRJe/KvhoNFFxo0m6fNuFUO8QJUk=
+github.com/godbus/dbus/v5 v5.1.0/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
 github.com/jthmath/winapi v0.0.0-20220924150906-a0bf4d56a80d h1:wLuAcoZzpQaecbvAAb9Znb9yJhQDfs1J4r5l8G3ztGE=
 github.com/jthmath/winapi v0.0.0-20220924150906-a0bf4d56a80d/go.mod h1:Sg9YR5bTlwbmDofmGHtkHn0TUXIOHXqnEXs8OryYats=
