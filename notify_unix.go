@@ -5,6 +5,7 @@ package notify_lock_session
 import (
 	"fmt"
 	"github.com/godbus/dbus/v5"
+	"log"
 	"os"
 	"time"
 )
@@ -14,12 +15,14 @@ type paramDBUS struct {
 	member string
 }
 
-func Subscribe(lock chan Lock, closeChan chan bool) error {
+func Subscribe(lock chan Lock, closeChan chan bool) (e error) {
 	go func() {
 		// Подключение к системе D-Bus
 		conn, err := dbus.ConnectSessionBus()
 		if err != nil {
-			log.Fatalf("Don`t connect D-Bus: %v", err)
+			e = err
+			return
+			//log.Fatalf("Don`t connect D-Bus: %v", err)
 			//return err
 		}
 		defer func() { _ = conn.Close() }()
