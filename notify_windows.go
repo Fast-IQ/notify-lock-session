@@ -3,18 +3,176 @@
 package notify_lock_session
 
 import (
-	"fmt"
 	"github.com/jthmath/winapi"
+	"log"
 	"syscall"
 	"time"
 	"unsafe"
 )
 
+func relayMessage(message uint32, wParam uintptr) {
+
+	msg := Message{
+		UMsg:  int(message),
+		Param: int(wParam),
+	}
+	msg.ChanOk = make(chan int)
+
+	chanMessages <- msg
+
+	<-msg.ChanOk
+}
+
+func Subscribe(lock chan Lock, closeChan chan bool) error {
+	var threadHandle winapi.HANDLE
+	go func() {
+		for {
+			select {
+			case <-closeChan:
+				log.Println("End watch lock")
+				Stop(threadHandle)
+				var result bool
+				r0, _, msg := procCloseHandle.Call(uintptr(threadHandle), uintptr(unsafe.Pointer(&result)))
+				if r0 != 0 {
+					log.Printf("CloseHandle %v\n", msg)
+				}
+				return
+			case m := <-chanMessages:
+				switch m.UMsg {
+				case WM_WTSSESSION_CHANGE:
+					switch m.Param {
+					case WTS_SESSION_LOCK:
+						l := Lock{
+							Lock:  true,
+							Clock: time.Now(),
+						}
+						lock <- l
+					case WTS_SESSION_UNLOCK:
+						l := Lock{
+							Lock:  false,
+							Clock: time.Now(),
+						}
+						lock <- l
+					}
+				case WM_QUERYENDSESSION:
+					log.Println("log off or shutdown")
+				}
+				close(m.ChanOk)
+			}
+		}
+	}()
+
+	go func() {
+		var err error
+		threadHandle, err = Start()
+		if err != nil {
+			log.Printf("CreateThread %v\n", err.Error())
+		}
+	}()
+
+	return nil
+}
+
+func Start() (winapi.HANDLE, error) {
+	f := WatchSessionNotifications()
+	h, _, err := CreateThread(uintptr(unsafe.Pointer(&f)))
+
+	return h, err
+}
+
+func Stop(hwnd winapi.HANDLE) {
+	r0, _, err0 := syscall.SyscallN(procTerminateThread.Addr(), 0, 0, uintptr(hwnd), 0, 0, 0)
+	err := int32(r0)
+	if err != 0 {
+		log.Printf("TerminateThread %v\n", err0.Error())
+	}
+}
+
+func WatchSessionNotifications() uintptr {
+	const lpClassName = "classWatchSessionNotifications"
+
+	wc := winapi.WNDCLASS{
+		PfnWndProc:   WndProc,
+		PszClassName: lpClassName,
+		Menu:         lpClassName,
+	}
+	_, err := winapi.RegisterClass(&wc)
+	if err != nil {
+		log.Println("Error RegisterClass:", err)
+	}
+
+	hwnd, err = winapi.CreateWindow(lpClassName,
+		lpClassName,
+		winapi.WS_OVERLAPPEDWINDOW,
+		0,
+		winapi.CW_USEDEFAULT,
+		winapi.CW_USEDEFAULT,
+		100, 100,
+		0, 0, 0, 0)
+	if err != nil {
+		log.Println("Error CreateWindow:", err)
+	}
+	log.Println("Handle:", hwnd)
+	err = winapi.UpdateWindow(hwnd)
+	if err != nil {
+		log.Println("Error UpdateWindow:", err)
+	}
+
+	r0, _, err0 := procWTSRegisterSessionNotification.Call(uintptr(hwnd), NOTIFY_FOR_THIS_SESSION)
+	if r0 != 0 {
+		log.Println("Message WTSRegisterSessionNotification:", err0)
+	}
+
+	msg := winapi.MSG{}
+	res := winapi.GetMessage(&msg, 0, 0, 0)
+	for res > 0 {
+		_ = winapi.TranslateMessage(&msg)
+		winapi.DispatchMessage(&msg)
+		res = winapi.GetMessage(&msg, 0, 0, 0)
+	}
+
+	return 0
+}
+
+func WndProc(hWnd winapi.HWND, message uint32, wParam uintptr, lParam uintptr) uintptr {
+	switch message {
+	case WM_QUERYENDSESSION:
+		relayMessage(message, lParam)
+		break
+	case WM_WTSSESSION_CHANGE:
+		relayMessage(message, wParam)
+		break
+	default:
+		return winapi.DefWindowProc(hWnd, message, wParam, lParam)
+	}
+	return 0
+}
+
+func CreateThread(proc uintptr) (h winapi.HANDLE, tid uintptr, err error) {
+	lpParameter := 1
+	r0, e1, err := syscall.SyscallN(procCreateThread.Addr(), 0, 0, proc, uintptr(unsafe.Pointer(&lpParameter)), 0, uintptr(unsafe.Pointer(&tid)))
+	if e1 != 0 {
+		//err = error(e1)
+	} else {
+		h = winapi.HANDLE(r0)
+	}
+	return h, e1, err
+}
+
+type Message struct {
+	UMsg   int
+	Param  int
+	ChanOk chan int
+}
+
 var (
+	hwnd winapi.HWND
+
 	chanMessages = make(chan Message, 1000)
 
 	kernel32 = syscall.MustLoadDLL("kernel32.dll")
 	wtsapi32 = syscall.MustLoadDLL("wtsapi32.dll")
+	user32   = syscall.MustLoadDLL("user32.dll")
 
 	procWTSRegisterSessionNotification = wtsapi32.MustFindProc("WTSRegisterSessionNotification")
 	procCreateThread                   = kernel32.MustFindProc("CreateThread")
@@ -48,156 +206,3 @@ const (
 	NOTIFY_FOR_THIS_SESSION = 0
 	NOTIFY_FOR_ALL_SESSIONS = 1
 )
-
-type Message struct {
-	UMsg   int
-	Param  int
-	ChanOk chan int
-}
-
-var hwnd winapi.HWND
-
-func relayMessage(message uint32, wParam uintptr) {
-
-	msg := Message{
-		UMsg:  int(message),
-		Param: int(wParam),
-	}
-	msg.ChanOk = make(chan int)
-
-	chanMessages <- msg
-
-	<-msg.ChanOk
-}
-
-func Subscribe(lock chan Lock, closeChan chan bool) error {
-	var threadHandle winapi.HANDLE
-	go func() {
-		for {
-			select {
-			case <-closeChan:
-				Stop(threadHandle)
-				r, _, err := procCloseHandle.Call(uintptr(threadHandle), 0)
-				if r == 0 {
-					panic(err)
-				}
-
-				return
-			case m := <-chanMessages:
-				switch m.UMsg {
-				case WM_WTSSESSION_CHANGE:
-					switch m.Param {
-					case WTS_SESSION_LOCK:
-						l := Lock{
-							Lock:  true,
-							Clock: time.Now(),
-						}
-						lock <- l
-					case WTS_SESSION_UNLOCK:
-						l := Lock{
-							Lock:  false,
-							Clock: time.Now(),
-						}
-						lock <- l
-					}
-				case WM_QUERYENDSESSION:
-					fmt.Println("log off or shutdown")
-				}
-				close(m.ChanOk)
-			}
-		}
-	}()
-
-	go func() {
-		//var err error
-		threadHandle, _ = Start()
-		//if err != nil {
-		//	return err
-		//}
-	}()
-
-	return nil
-}
-
-func Start() (winapi.HANDLE, error) {
-	f := WatchSessionNotifications()
-	h, _, err := CreateThread(uintptr(unsafe.Pointer(&f)))
-
-	return h, err
-}
-
-func Stop(hwnd winapi.HANDLE) {
-	_, _, _ = syscall.SyscallN(procTerminateThread.Addr(), 0, 0, uintptr(hwnd), 0, 0, 0)
-}
-
-func WatchSessionNotifications() uintptr {
-	const lpClassName = "classWatchSessionNotifications"
-
-	wc := winapi.WNDCLASS{
-		PfnWndProc:   WndProc,
-		PszClassName: lpClassName,
-		Menu:         lpClassName,
-	}
-	_, err := winapi.RegisterClass(&wc)
-	if err != nil {
-		//return err
-		fmt.Println(err)
-	}
-
-	hwnd, err = winapi.CreateWindow(lpClassName,
-		lpClassName,
-		winapi.WS_OVERLAPPEDWINDOW,
-		0,
-		winapi.CW_USEDEFAULT,
-		winapi.CW_USEDEFAULT,
-		100, 100,
-		0, 0, 0, 0)
-	if err != nil {
-		//return err
-		fmt.Println(err)
-	}
-
-	err = winapi.UpdateWindow(hwnd)
-	if err != nil {
-		//return err
-		fmt.Println(err)
-	}
-
-	_, _, _ = procWTSRegisterSessionNotification.Call(uintptr(hwnd), NOTIFY_FOR_THIS_SESSION)
-
-	msg := winapi.MSG{}
-	res := winapi.GetMessage(&msg, 0, 0, 0)
-	for res > 0 {
-		//fmt.Println(msg)
-		_ = winapi.TranslateMessage(&msg)
-		winapi.DispatchMessage(&msg)
-		res = winapi.GetMessage(&msg, 0, 0, 0)
-	}
-
-	return 0
-}
-
-func WndProc(hWnd winapi.HWND, message uint32, wParam uintptr, lParam uintptr) uintptr {
-	switch message {
-	case WM_QUERYENDSESSION:
-		relayMessage(message, lParam)
-		break
-	case WM_WTSSESSION_CHANGE:
-		relayMessage(message, wParam)
-		break
-	default:
-		return winapi.DefWindowProc(hWnd, message, wParam, lParam)
-	}
-	return 0
-}
-
-func CreateThread(proc uintptr) (h winapi.HANDLE, tid uintptr, err error) {
-	lpParameter := 1
-	r0, e1, err := syscall.SyscallN(procCreateThread.Addr(), 0, 0, proc, uintptr(unsafe.Pointer(&lpParameter)), 0, uintptr(unsafe.Pointer(&tid)))
-	if e1 != 0 {
-		//err = error(e1)
-	} else {
-		h = winapi.HANDLE(r0)
-	}
-	return h, e1, err
-}

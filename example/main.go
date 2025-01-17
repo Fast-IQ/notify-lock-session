@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	notifyLS "github.com/Fast-IQ/notify-lock-session"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,7 +21,7 @@ func main() {
 			<-quit
 			fmt.Println("Exit. Wait close.")
 			chanClose <- true
-			end <- true
+			close(end)
 			//other close operation
 		}
 	}()
@@ -29,8 +30,8 @@ func main() {
 
 	_ = notifyLS.Subscribe(info, chanClose)
 
-	i := 0
-	for i == 0 {
+	e := 0
+	for e == 0 {
 		select {
 		case l := <-info:
 			if l.Lock {
@@ -39,7 +40,9 @@ func main() {
 				fmt.Println(l.Clock, "Session unlock")
 			}
 		case <-end:
-			i = 1
+			log.Println("End loop lock")
+			e = 1
+			return
 		}
 	}
 }
