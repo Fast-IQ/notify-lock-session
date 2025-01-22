@@ -3,6 +3,7 @@
 package notify_lock_session
 
 import (
+	"errors"
 	"github.com/jthmath/winapi"
 	"log"
 	"syscall"
@@ -25,7 +26,13 @@ func relayMessage(message uint32, wParam uintptr) {
 
 func Subscribe(lock chan Lock, closeChan chan bool) error {
 	var threadHandle winapi.HANDLE
+
 	go func() {
+		status, _ := CheckSessionStatus()
+		lock <- Lock{
+			Lock:  status,
+			Clock: time.Now(),
+		}
 		for {
 			select {
 			case <-closeChan:
@@ -159,6 +166,32 @@ func CreateThread(proc uintptr) (h winapi.HANDLE, tid uintptr, err error) {
 	return h, e1, err
 }
 
+func CheckSessionStatus() (isLock bool, err error) {
+
+	r0, _, _ := procGetCurrentProcessId.Call()
+	pid := uint32(r0)
+	var dwSessionId uint32
+	err = ProcessIdToSessionId(pid, &dwSessionId)
+
+	if err != nil {
+		return true, err
+	}
+	if dwSessionId == 1 {
+		return false, nil
+	}
+
+	return true, nil
+
+}
+
+func ProcessIdToSessionId(pid uint32, sessionid *uint32) (err error) {
+	r1, _, e1 := syscall.SyscallN(procProcessIdToSessionId.Addr(), uintptr(pid), uintptr(unsafe.Pointer(sessionid)))
+	if r1 == 0 {
+		err = errors.New("ProcessIdToSessionId error: " + e1.Error())
+	}
+	return
+}
+
 type Message struct {
 	UMsg   int
 	Param  int
@@ -178,6 +211,8 @@ var (
 	procCreateThread                   = kernel32.MustFindProc("CreateThread")
 	procTerminateThread                = kernel32.MustFindProc("TerminateThread")
 	procCloseHandle                    = kernel32.MustFindProc("CloseHandle")
+	procProcessIdToSessionId           = kernel32.MustFindProc("ProcessIdToSessionId")
+	procGetCurrentProcessId            = kernel32.MustFindProc("GetCurrentProcessId")
 )
 
 // http://msdn.microsoft.com/en-us/library/aa383828(v=vs.85).aspx
@@ -205,4 +240,10 @@ const (
 const (
 	NOTIFY_FOR_THIS_SESSION = 0
 	NOTIFY_FOR_ALL_SESSIONS = 1
+)
+
+const (
+	PROC_TOKEN_DUPLICATE         = 0x0002
+	PROC_TOKEN_QUERY             = 0x0008
+	PROC_TOKEN_ADJUST_PRIVILEGES = 0x0020
 )
