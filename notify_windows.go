@@ -4,8 +4,10 @@ package notify_lock_session
 
 import (
 	"errors"
+	"fmt"
 	"github.com/jthmath/winapi"
 	"log"
+	"strconv"
 	"syscall"
 	"time"
 	"unsafe"
@@ -168,28 +170,69 @@ func CreateThread(proc uintptr) (h winapi.HANDLE, tid uintptr, err error) {
 
 func CheckSessionStatus() (isLock bool, err error) {
 
-	r0, _, _ := procGetCurrentProcessId.Call()
-	pid := uint32(r0)
-	var dwSessionId uint32
-	err = ProcessIdToSessionId(pid, &dwSessionId)
+	sessionId := getSessionId()
+	fmt.Println("Session Id:", sessionId)
+	rs, _ := isRemoteSession(sessionId)
+	fmt.Println("Remote session:", rs)
+	lock, err := getLockSession(sessionId)
 
-	if err != nil {
-		return true, err
-	}
-	if dwSessionId == 1 {
-		return false, nil
-	}
-
-	return true, nil
-
+	return lock, err
 }
 
-func ProcessIdToSessionId(pid uint32, sessionid *uint32) (err error) {
-	r1, _, e1 := syscall.SyscallN(procProcessIdToSessionId.Addr(), uintptr(pid), uintptr(unsafe.Pointer(sessionid)))
+func getLockSession(sessionId uint32) (isLock bool, err error) {
+	var buffer *uint32
+	var bytesReturned uint32
+
+	// Получаем состояние сессии
+	r1, _, _ := procWTSQuerySessionInformation.Call(
+		0, // hServer (0 для локальной машины)
+		uintptr(sessionId),
+		uintptr(WTSSessionInfoEx),
+		uintptr(unsafe.Pointer(&buffer)),
+		uintptr(unsafe.Pointer(&bytesReturned)),
+	)
+
 	if r1 == 0 {
-		err = errors.New("ProcessIdToSessionId error: " + e1.Error())
+		fmt.Println("Ошибка получения состояния сессии.")
+		return false, errors.New("error")
 	}
-	return
+	b := (*WTSINFOEXA)(unsafe.Pointer(buffer))
+	// состояние сессии
+	switch b.Data.SessionFlags {
+	case WTS_SESSIONSTATE_UNLOCK:
+		return false, nil
+	case WTS_SESSIONSTATE_LOCK:
+		return true, nil
+	default:
+		return false, errors.New(strconv.Itoa(int(b.Data.SessionFlags)))
+	}
+}
+
+func isRemoteSession(sessionId uint32) (bool, error) {
+	var buffer *uint32
+	var bytesReturned uint32
+
+	// Получаем состояние сессии
+	r1, _, _ := procWTSQuerySessionInformation.Call(
+		0, // hServer (0 для локальной машины)
+		uintptr(sessionId),
+		WTSIsRemoteSession,
+		uintptr(unsafe.Pointer(&buffer)),
+		uintptr(unsafe.Pointer(&bytesReturned)),
+	)
+
+	if r1 == 0 {
+		fmt.Println("Ошибка получения состояния сессии.")
+		return false, errors.New("Ошибка получения состояния сессии. WTSIsRemoteSession")
+	}
+	b := (*bool)(unsafe.Pointer(buffer))
+	_, _, _ = procWTSFreeMemory.Call(uintptr(unsafe.Pointer(&buffer)))
+	return *b, nil
+}
+
+func getSessionId() uint32 {
+	ret, _, _ := procWTSGetActiveConsoleSessionId.Call()
+	return uint32(ret)
 }
 
 type Message struct {
@@ -208,11 +251,14 @@ var (
 	user32   = syscall.MustLoadDLL("user32.dll")
 
 	procWTSRegisterSessionNotification = wtsapi32.MustFindProc("WTSRegisterSessionNotification")
+	procWTSQuerySessionInformation     = wtsapi32.MustFindProc("WTSQuerySessionInformationW")
+	procWTSFreeMemory                  = wtsapi32.MustFindProc("WTSFreeMemory")
 	procCreateThread                   = kernel32.MustFindProc("CreateThread")
 	procTerminateThread                = kernel32.MustFindProc("TerminateThread")
 	procCloseHandle                    = kernel32.MustFindProc("CloseHandle")
-	procProcessIdToSessionId           = kernel32.MustFindProc("ProcessIdToSessionId")
-	procGetCurrentProcessId            = kernel32.MustFindProc("GetCurrentProcessId")
+	//	procProcessIdToSessionId           = kernel32.MustFindProc("ProcessIdToSessionId")
+	//	procGetCurrentProcessId            = kernel32.MustFindProc("GetCurrentProcessId")
+	procWTSGetActiveConsoleSessionId = kernel32.MustFindProc("WTSGetActiveConsoleSessionId")
 )
 
 // http://msdn.microsoft.com/en-us/library/aa383828(v=vs.85).aspx
@@ -247,3 +293,77 @@ const (
 	PROC_TOKEN_QUERY             = 0x0008
 	PROC_TOKEN_ADJUST_PRIVILEGES = 0x0020
 )
+
+const (
+	WTS_SESSIONSTATE_LOCK    = 0x0
+	WTS_SESSIONSTATE_UNLOCK  = 0x1
+	WTS_SESSIONSTATE_UNKNOWN = 0xFFFFFFFF
+)
+
+const (
+	WTSInitialProgram     = 0
+	WTSApplicationName    = 1
+	WTSWorkingDirectory   = 2
+	WTSOEMId              = 3
+	WTSSessionId          = 4
+	WTSUserName           = 5
+	WTSWinStationName     = 6
+	WTSDomainName         = 7
+	WTSConnectState       = 8
+	WTSClientBuildNumber  = 9
+	WTSClientName         = 10
+	WTSClientDirectory    = 11
+	WTSClientProductId    = 12
+	WTSClientHardwareId   = 13
+	WTSClientAddress      = 14
+	WTSClientDisplay      = 15
+	WTSClientProtocolType = 16
+	WTSIdleTime           = 17
+	WTSLogonTime          = 18
+	WTSIncomingBytes      = 19
+	WTSOutgoingBytes      = 20
+	WTSIncomingFrames     = 21
+	WTSOutgoingFrames     = 22
+	WTSClientInfo         = 23
+	WTSSessionInfo        = 24
+	WTSSessionInfoEx      = 25
+	WTSConfigInfo         = 26
+	WTSValidationInfo     = 27
+	WTSSessionAddressV4   = 28
+	WTSIsRemoteSession    = 29
+)
+
+const (
+	WINSTATIONNAME_LENGTH = 32
+	USERNAME_LENGTH       = 20
+	DOMAIN_LENGTH         = 15
+)
+
+type WTS_CONNECTSTATE_CLASS int32
+
+// Структура, аналогичная WTSINFOEX_LEVEL1_A в Go
+type WTSINFOEX_LEVEL1_A struct {
+	SessionId               uint32
+	SessionState            WTS_CONNECTSTATE_CLASS
+	SessionFlags            int32
+	WinStationName          [WINSTATIONNAME_LENGTH + 1]uint16
+	UserName                [USERNAME_LENGTH + 1]uint16
+	DomainName              [DOMAIN_LENGTH + 1]uint16
+	LogonTime               time.Time
+	ConnectTime             time.Time
+	DisconnectTime          time.Time
+	LastInputTime           time.Time
+	CurrentTime             int64
+	IncomingBytes           uint32
+	OutgoingBytes           uint32
+	IncomingFrames          uint32
+	OutgoingFrames          uint32
+	IncomingCompressedBytes uint32
+	OutgoingCompressedBytes uint32
+}
+
+// Структура WTSINFOEXA
+type WTSINFOEXA struct {
+	Level uint32
+	Data  WTSINFOEX_LEVEL1_A
+}
