@@ -28,13 +28,16 @@ func relayMessage(message uint32, wParam uintptr) {
 
 func Subscribe(lock chan Lock, closeChan chan bool) error {
 	var threadHandle winapi.HANDLE
-
+	
 	go func() {
+		<- time.After(time.Second * 2)
 		status, _ := CheckSessionStatus()
 		lock <- Lock{
 			Lock:  status,
 			Clock: time.Now(),
 		}
+	}()
+	go func() {
 		for {
 			select {
 			case <-closeChan:
