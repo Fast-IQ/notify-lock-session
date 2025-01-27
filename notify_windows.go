@@ -29,7 +29,7 @@ func Subscribe(lock chan Lock, closeChan chan bool) error {
 	var threadHandle HANDLE
 
 	go func() {
-		<-time.After(time.Second * 2)
+		<-time.After(time.Second * 1)
 		status, _ := CheckSessionStatus()
 		lock <- Lock{
 			Lock:  status,
@@ -175,8 +175,8 @@ func CheckSessionStatus() (isLock bool, err error) {
 
 	sessionId := getSessionId()
 	log.Println("Session Id:", sessionId)
-	rs, _ := isRemoteSession(sessionId)
-	log.Println("Remote session:", rs)
+	/*	rs, _ := isRemoteSession(sessionId)
+		log.Println("Remote session:", rs)*/
 	lock, err := getLockSession(sessionId)
 
 	return lock, err
@@ -196,8 +196,8 @@ func getLockSession(sessionId uint32) (isLock bool, err error) {
 	)
 
 	if r1 == 0 {
-		fmt.Println("Ошибка получения состояния сессии.")
-		return false, errors.New("error")
+		log.Println("Error getting the session status.")
+		return false, errors.New("Error getting the session status.")
 	}
 	b := (*WTSINFOEXA)(unsafe.Pointer(buffer))
 	// состояние сессии
