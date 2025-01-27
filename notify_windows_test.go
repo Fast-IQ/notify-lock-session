@@ -2,7 +2,6 @@ package notify_lock_session
 
 import (
 	"fmt"
-	"github.com/jthmath/winapi"
 	"testing"
 	"time"
 )
@@ -47,7 +46,7 @@ func TestSubscribe(t *testing.T) {
 	<-end
 }
 
-func SendMessage(hwnd winapi.HWND, msg uint32, wParam, lParam uintptr) uintptr {
+func SendMessage(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	ret, _, _ := procSendMessage.Call(
 		uintptr(hwnd),
 		uintptr(msg),
