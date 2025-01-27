@@ -1,6 +1,6 @@
 version: "1.0.{build}"
 
-stack: go 1.22
+stack: go 1.23
 
 clone_folder: c:\gopath\src\github.com\Fast-IQ\notify-lock-session
 shallow_clone: true              # копируем только последний коммит, без истории (git clone --depth 1)
@@ -11,14 +11,6 @@ environment:
   - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
     GOARCH: 386
   - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-    GOARCH: amd64
-  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-    GOARCH: 386
-  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-    GOARCH: amd64
-  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
-    GOARCH: 386
-  - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
     GOARCH: amd64
 
 platform:
