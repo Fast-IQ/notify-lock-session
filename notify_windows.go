@@ -52,6 +52,30 @@ func Subscribe(lock chan Lock, closeChan chan bool) error {
 				switch m.UMsg {
 				case WM_WTSSESSION_CHANGE:
 					switch m.Param {
+					case WTS_CONSOLE_DISCONNECT:
+						l := Lock{
+							Lock:  true,
+							Clock: time.Now(),
+						}
+						lock <- l
+					case WTS_CONSOLE_CONNECT:
+						l := Lock{
+							Lock:  false,
+							Clock: time.Now(),
+						}
+						lock <- l
+					case WTS_REMOTE_DISCONNECT:
+						l := Lock{
+							Lock:  true,
+							Clock: time.Now(),
+						}
+						lock <- l
+					case WTS_REMOTE_CONNECT:
+						l := Lock{
+							Lock:  false,
+							Clock: time.Now(),
+						}
+						lock <- l
 					case WTS_SESSION_LOCK:
 						l := Lock{
 							Lock:  true,
@@ -65,6 +89,7 @@ func Subscribe(lock chan Lock, closeChan chan bool) error {
 						}
 						lock <- l
 					}
+
 				case WM_QUERYENDSESSION:
 					log.Println("log off or shutdown")
 				}
@@ -211,9 +236,11 @@ func getLockSession(sessionId uint32) (isLock bool, err error) {
 	}
 }
 
-func isRemoteSession(sessionId uint32) (bool, error) {
+func IsRemoteSession() (bool, error) {
 	var buffer *uint32
 	var bytesReturned uint32
+
+	sessionId := getSessionId()
 
 	// Получаем состояние сессии
 	r1, _, _ := procWTSQuerySessionInformation.Call(
@@ -229,7 +256,7 @@ func isRemoteSession(sessionId uint32) (bool, error) {
 		return false, errors.New("Ошибка получения состояния сессии. WTSIsRemoteSession")
 	}
 	b := (*bool)(unsafe.Pointer(buffer))
-	_, _, _ = procWTSFreeMemory.Call(uintptr(unsafe.Pointer(&buffer)))
+	//_, _, _ = procWTSFreeMemory.Call(uintptr(unsafe.Pointer(&buffer)))
 	return *b, nil
 }
 

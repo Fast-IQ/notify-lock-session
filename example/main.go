@@ -14,14 +14,14 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGABRT)
 
 	chanClose := make(chan bool, 1)
-	end := make(chan bool, 1)
+	//end := make(chan bool, 1)
 
 	go func() {
 		for {
 			<-quit
 			fmt.Println("Exit. Wait close.")
-			chanClose <- true
-			close(end)
+			close(chanClose)
+			//close(end)
 			//other close operation
 		}
 	}()
@@ -30,8 +30,18 @@ func main() {
 
 	_ = notifyLS.Subscribe(info, chanClose)
 
-	e := 0
-	for e == 0 {
+	remote, err := notifyLS.IsRemoteSession()
+	if err != nil {
+		fmt.Println("Error get info of remote session: ", err)
+	}
+
+	if remote {
+		fmt.Println("This is local session.")
+	} else {
+		fmt.Println("This is remote session.")
+	}
+
+	for {
 		select {
 		case l := <-info:
 			if l.Lock {
@@ -39,9 +49,8 @@ func main() {
 			} else {
 				fmt.Println(l.Clock, "Session unlock")
 			}
-		case <-end:
+		case <-chanClose:
 			log.Println("End loop lock")
-			e = 1
 			return
 		}
 	}
