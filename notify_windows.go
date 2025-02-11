@@ -52,42 +52,26 @@ func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) error {
 				switch m.UMsg {
 				case WM_WTSSESSION_CHANGE:
 					switch m.Param {
-					case WTS_CONSOLE_DISCONNECT:
+					case WTS_CONSOLE_DISCONNECT,
+						WTS_REMOTE_DISCONNECT,
+						WTS_SESSION_LOCK,
+						WTS_SESSION_LOGOFF:
 						l := Lock{
 							Lock:  true,
 							Clock: time.Now(),
 						}
 						lock <- l
-					case WTS_CONSOLE_CONNECT:
+						break
+					case WTS_CONSOLE_CONNECT,
+						WTS_REMOTE_CONNECT,
+						WTS_SESSION_UNLOCK,
+						WTS_SESSION_LOGON:
 						l := Lock{
 							Lock:  false,
 							Clock: time.Now(),
 						}
 						lock <- l
-					case WTS_REMOTE_DISCONNECT:
-						l := Lock{
-							Lock:  true,
-							Clock: time.Now(),
-						}
-						lock <- l
-					case WTS_REMOTE_CONNECT:
-						l := Lock{
-							Lock:  false,
-							Clock: time.Now(),
-						}
-						lock <- l
-					case WTS_SESSION_LOCK:
-						l := Lock{
-							Lock:  true,
-							Clock: time.Now(),
-						}
-						lock <- l
-					case WTS_SESSION_UNLOCK:
-						l := Lock{
-							Lock:  false,
-							Clock: time.Now(),
-						}
-						lock <- l
+						break
 					}
 
 				case WM_QUERYENDSESSION:
@@ -137,7 +121,7 @@ func (l *NotifyLock) watchSessionNotifications() uintptr {
 		slog.Error("Error RegisterClass:", slog.String("error", err.Error()))
 	}
 
-	hwnd, err = CreateWindow(lpClassName,
+	hwnd, err = CreateWindowExW(lpClassName,
 		lpClassName,
 		WS_OVERLAPPEDWINDOW,
 		0,

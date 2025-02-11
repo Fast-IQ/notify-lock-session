@@ -15,7 +15,7 @@ type paramDBUS struct {
 	member string
 }
 
-func Subscribe(ctx context.Context, lock chan Lock) (e error) {
+func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) (e error) {
 	go func() {
 		// Подключение к системе D-Bus
 		conn, err := dbus.ConnectSessionBus()
@@ -26,7 +26,7 @@ func Subscribe(ctx context.Context, lock chan Lock) (e error) {
 			//return err
 		}
 		defer func() { _ = conn.Close() }()
-		param := getDbusParams()
+		param := l.getDbusParams()
 		// Подписка на события
 		err = conn.AddMatchSignal(
 			dbus.WithMatchInterface(param.iface),
@@ -66,7 +66,7 @@ func Subscribe(ctx context.Context, lock chan Lock) (e error) {
 	return nil
 }
 
-func getDbusParams() (p paramDBUS) {
+func (l *NotifyLock) getDbusParams() (p paramDBUS) {
 	osDesc := os.Getenv("XDG_CURRENT_DESKTOP")
 	fmt.Println(osDesc)
 	switch osDesc {

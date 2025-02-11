@@ -35,9 +35,9 @@ func main() {
 	}
 
 	if remote {
-		fmt.Println("This is local session.")
-	} else {
 		fmt.Println("This is remote session.")
+	} else {
+		fmt.Println("This is local session.")
 	}
 
 	for {

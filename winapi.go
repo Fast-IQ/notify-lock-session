@@ -256,8 +256,8 @@ var (
 	procDispatchMessage  = user32.MustFindProc("DispatchMessageW")
 	procDefWindowProc    = user32.MustFindProc("DefWindowProcW")
 	procUpdateWindow     = user32.MustFindProc("UpdateWindow")
-	procCreateWindow     = user32.MustFindProc("CreateWindowExW")
-	procRegisterClass    = user32.MustFindProc("RegisterClassExW")
+	procCreateWindowExW  = user32.MustFindProc("CreateWindowExW")
+	procRegisterClassExW = user32.MustFindProc("RegisterClassExW")
 )
 
 func FormatMessage(flags uint32, msgsrc interface{}, msgid uint32, langid uint32, args *byte) (string, error) {
@@ -332,7 +332,7 @@ func UpdateWindow(hWnd HWND) error {
 	}
 }
 
-func CreateWindow(ClassName string, WindowName string, Style uint32, ExStyle uint32,
+func CreateWindowExW(ClassName string, WindowName string, Style uint32, ExStyle uint32,
 	X int32, Y int32, Width int32, Height int32,
 	WndParent HWND, Menu HMENU, inst HINSTANCE, Param uintptr) (hWnd HWND, err error) {
 	pClassName, err := syscall.UTF16PtrFromString(ClassName)
@@ -343,7 +343,7 @@ func CreateWindow(ClassName string, WindowName string, Style uint32, ExStyle uin
 	if err != nil {
 		return 0, err
 	}
-	r1, _, err := procCreateWindow.Call(
+	r1, _, err := procCreateWindowExW.Call(
 		uintptr(ExStyle), uintptr(unsafe.Pointer(pClassName)), uintptr(unsafe.Pointer(pWindowName)), uintptr(Style),
 		uintptr(X), uintptr(Y), uintptr(Width), uintptr(Height),
 		uintptr(WndParent), uintptr(Menu), uintptr(inst), uintptr(Param))
@@ -411,7 +411,7 @@ func RegisterClass(pWndClass *WNDCLASS) (atom uint16, err error) {
 	wc.pszClassName = _pClassName
 	wc.hIconSmall = pWndClass.HIconSmall
 
-	r1, _, _ := procRegisterClass.Call(uintptr(unsafe.Pointer(&wc)), 0, 0)
+	r1, _, _ := procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)), 0, 0)
 	n := uint16(r1)
 
 	if n == 0 {

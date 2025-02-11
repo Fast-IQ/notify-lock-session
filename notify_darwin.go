@@ -36,16 +36,19 @@ void addObserver() {
 */
 
 import "C"
-import "time"
+import (
+	"context"
+	"time"
+)
 
 var messages = make(chan bool)
 
 //export relayMessage
-func relayMessage(lock C.uint) {
+func (l *NotifyLock) relayMessage(lock C.uint) {
 	messages <- lock != 0
 }
 
-func Subscribe(lock chan Lock, closeChan chan bool) error {
+func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) error {
 	go func() {
 		C.addObserver()
 		for {
@@ -55,7 +58,7 @@ func Subscribe(lock chan Lock, closeChan chan bool) error {
 					Lock:  m,
 					Clock: time.Now(),
 				}
-			case <-closeChan:
+			case <-ctx.Done():
 				return
 			}
 		}
