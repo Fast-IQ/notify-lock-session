@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	notifyLS "github.com/Fast-IQ/notify-lock-session"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,22 +14,20 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGABRT)
 
-	chanClose := make(chan bool, 1)
-	//end := make(chan bool, 1)
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
 		for {
 			<-quit
 			fmt.Println("Exit. Wait close.")
-			close(chanClose)
-			//close(end)
+			cancel()
 			//other close operation
 		}
 	}()
 
 	info := make(chan notifyLS.Lock, 10)
-
-	_ = notifyLS.Subscribe(info, chanClose)
+	nl := notifyLS.NotifyLock{}
+	_ = nl.Subscribe(ctx, info)
 
 	remote, err := notifyLS.IsRemoteSession()
 	if err != nil {
@@ -49,8 +48,8 @@ func main() {
 			} else {
 				fmt.Println(l.Clock, "Session unlock")
 			}
-		case <-chanClose:
-			log.Println("End loop lock")
+		case <-ctx.Done():
+			slog.Info("End loop lock")
 			return
 		}
 	}

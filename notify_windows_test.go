@@ -1,6 +1,7 @@
 package notify_lock_session
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -10,9 +11,10 @@ var procSendMessage = user32.MustFindProc("SendMessageW")
 
 func TestSubscribe(t *testing.T) {
 	msg := make(chan Lock, 1)
-	end := make(chan bool, 1)
-
-	err := Subscribe(msg, end)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	nl := NotifyLock{}
+	err := nl.Subscribe(ctx, msg)
 	if err != nil {
 		t.Error(err)
 	}
@@ -20,16 +22,16 @@ func TestSubscribe(t *testing.T) {
 	go func() {
 		for {
 			select {
-			case <-end:
+			case <-ctx.Done():
 				return
 			case m := <-msg:
 				lock = m.Lock
 				fmt.Println("Is lock:", lock)
-				close(end)
+				cancel()
 				return
 			case <-time.After(time.Second * 20):
 				t.Error("Time over")
-				close(end)
+				cancel()
 				return
 			}
 		}
@@ -43,7 +45,14 @@ func TestSubscribe(t *testing.T) {
 	//_ = SendMessage(hwnd, WM_WTSSESSION_CHANGE, WTS_SESSION_LOCK, 0)
 	//	_ = SendMessage(hwnd, WM_WTSSESSION_CHANGE, WTS_SESSION_UNLOCK, 0)
 
-	<-end
+	<-ctx.Done()
+}
+
+func TestRemote(t *testing.T) {
+	_, err := IsRemoteSession()
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 func SendMessage(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {

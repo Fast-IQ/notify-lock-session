@@ -3,6 +3,7 @@
 package notify_lock_session
 
 import (
+	"context"
 	"fmt"
 	"github.com/godbus/dbus/v5"
 	"os"
@@ -14,7 +15,7 @@ type paramDBUS struct {
 	member string
 }
 
-func Subscribe(lock chan Lock, closeChan chan bool) (e error) {
+func Subscribe(ctx context.Context, lock chan Lock) (e error) {
 	go func() {
 		// Подключение к системе D-Bus
 		conn, err := dbus.ConnectSessionBus()
@@ -55,7 +56,7 @@ func Subscribe(lock chan Lock, closeChan chan bool) (e error) {
 						lock <- l
 					}
 				}
-			case <-closeChan:
+			case <-ctx.Done():
 				return
 			}
 

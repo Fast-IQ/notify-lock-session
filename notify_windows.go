@@ -3,16 +3,16 @@
 package notify_lock_session
 
 import (
+	"context"
 	"errors"
-	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"syscall"
 	"time"
 	"unsafe"
 )
 
-func relayMessage(message uint32, wParam uintptr) {
+func (l *NotifyLock) relayMessage(message uint32, wParam uintptr) {
 
 	msg := Message{
 		UMsg:  int(message),
@@ -25,7 +25,7 @@ func relayMessage(message uint32, wParam uintptr) {
 	<-msg.ChanOk
 }
 
-func Subscribe(lock chan Lock, closeChan chan bool) error {
+func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) error {
 	var threadHandle HANDLE
 
 	go func() {
@@ -39,13 +39,13 @@ func Subscribe(lock chan Lock, closeChan chan bool) error {
 	go func() {
 		for {
 			select {
-			case <-closeChan:
-				log.Println("End watch lock")
-				Stop(threadHandle)
+			case <-ctx.Done():
+				slog.Info("End watch lock")
+				l.stop(threadHandle)
 				var result bool
 				r0, _, msg := procCloseHandle.Call(uintptr(threadHandle), uintptr(unsafe.Pointer(&result)))
 				if r0 != 0 {
-					log.Printf("CloseHandle %v\n", msg)
+					slog.Error("CloseHandle", slog.String("error", msg.Error()))
 				}
 				return
 			case m := <-chanMessages:
@@ -91,7 +91,7 @@ func Subscribe(lock chan Lock, closeChan chan bool) error {
 					}
 
 				case WM_QUERYENDSESSION:
-					log.Println("log off or shutdown")
+					slog.Info("log off or shutdown")
 				}
 				close(m.ChanOk)
 			}
@@ -100,41 +100,41 @@ func Subscribe(lock chan Lock, closeChan chan bool) error {
 
 	go func() {
 		var err error
-		threadHandle, err = Start()
+		threadHandle, err = l.start()
 		if err != nil {
-			log.Printf("CreateThread %v\n", err.Error())
+			slog.Error("CreateThread", slog.String("error", err.Error()))
 		}
 	}()
 
 	return nil
 }
 
-func Start() (HANDLE, error) {
-	f := WatchSessionNotifications()
-	h, _, err := CreateThread(uintptr(unsafe.Pointer(&f)))
+func (l *NotifyLock) start() (HANDLE, error) {
+	f := l.watchSessionNotifications()
+	h, _, err := l.createThread(uintptr(unsafe.Pointer(&f)))
 
 	return h, err
 }
 
-func Stop(hwnd HANDLE) {
+func (l *NotifyLock) stop(hwnd HANDLE) {
 	r0, _, err0 := syscall.SyscallN(procTerminateThread.Addr(), 0, 0, uintptr(hwnd), 0, 0, 0)
 	err := int32(r0)
 	if err != 0 {
-		log.Printf("TerminateThread %v\n", err0.Error())
+		slog.Error("TerminateThread ", slog.String("error", err0.Error()))
 	}
 }
 
-func WatchSessionNotifications() uintptr {
+func (l *NotifyLock) watchSessionNotifications() uintptr {
 	const lpClassName = "classWatchSessionNotifications"
 
 	wc := WNDCLASS{
-		PfnWndProc:   WndProc,
+		PfnWndProc:   l.wndProc,
 		PszClassName: lpClassName,
 		Menu:         lpClassName,
 	}
 	_, err := RegisterClass(&wc)
 	if err != nil {
-		log.Println("Error RegisterClass:", err)
+		slog.Error("Error RegisterClass:", slog.String("error", err.Error()))
 	}
 
 	hwnd, err = CreateWindow(lpClassName,
@@ -146,17 +146,17 @@ func WatchSessionNotifications() uintptr {
 		100, 100,
 		0, 0, 0, 0)
 	if err != nil {
-		log.Println("Error CreateWindow:", err)
+		slog.Error("Error CreateWindow:", slog.String("error", err.Error()))
 	}
-	log.Println("Handle:", hwnd)
+	slog.Debug("CreateWindow:", slog.String("handle", strconv.Itoa(int(hwnd))))
 	err = UpdateWindow(hwnd)
 	if err != nil {
-		log.Println("Error UpdateWindow:", err)
+		slog.Error("UpdateWindow:", slog.String("error", err.Error()))
 	}
 
 	r0, _, err0 := procWTSRegisterSessionNotification.Call(uintptr(hwnd), NOTIFY_FOR_THIS_SESSION)
 	if r0 == 0 {
-		log.Println("Message WTSRegisterSessionNotification:", err0)
+		slog.Debug("Message WTSRegisterSessionNotification:", slog.String("msg", err0.Error()))
 	}
 
 	msg := MSG{}
@@ -170,13 +170,13 @@ func WatchSessionNotifications() uintptr {
 	return 0
 }
 
-func WndProc(hWnd HWND, message uint32, wParam uintptr, lParam uintptr) uintptr {
+func (l *NotifyLock) wndProc(hWnd HWND, message uint32, wParam uintptr, lParam uintptr) uintptr {
 	switch message {
 	case WM_QUERYENDSESSION:
-		relayMessage(message, lParam)
+		l.relayMessage(message, lParam)
 		break
 	case WM_WTSSESSION_CHANGE:
-		relayMessage(message, wParam)
+		l.relayMessage(message, wParam)
 		break
 	default:
 		return DefWindowProc(hWnd, message, wParam, lParam)
@@ -184,7 +184,7 @@ func WndProc(hWnd HWND, message uint32, wParam uintptr, lParam uintptr) uintptr 
 	return 0
 }
 
-func CreateThread(proc uintptr) (h HANDLE, tid uintptr, err error) {
+func (l *NotifyLock) createThread(proc uintptr) (h HANDLE, tid uintptr, err error) {
 	lpParameter := 1
 	//	r0, e1, err := syscall.SyscallN(procCreateThread.Addr(), 0, 0, proc, uintptr(unsafe.Pointer(&lpParameter)), 0, uintptr(unsafe.Pointer(&tid)))
 	r0, e1, err := procCreateThread.Call(0, 0, proc, uintptr(unsafe.Pointer(&lpParameter)), 0, uintptr(unsafe.Pointer(&tid)))
@@ -199,7 +199,7 @@ func CreateThread(proc uintptr) (h HANDLE, tid uintptr, err error) {
 func CheckSessionStatus() (isLock bool, err error) {
 
 	sessionId := getSessionId()
-	log.Println("Session Id:", sessionId)
+	slog.Debug("Id:", slog.String("session", strconv.Itoa(int(sessionId))))
 	/*	rs, _ := isRemoteSession(sessionId)
 		log.Println("Remote session:", rs)*/
 	lock, err := getLockSession(sessionId)
@@ -221,8 +221,9 @@ func getLockSession(sessionId uint32) (isLock bool, err error) {
 	)
 
 	if r1 == 0 {
-		log.Println("Error getting the session status.")
-		return false, errors.New("Error getting the session status.")
+		err = errors.New("Error getting the session status.")
+		slog.Error("Getting the session status", slog.String("error", err.Error()))
+		return false, err
 	}
 	b := (*WTSINFOEXA)(unsafe.Pointer(buffer))
 	// состояние сессии
@@ -252,7 +253,6 @@ func IsRemoteSession() (bool, error) {
 	)
 
 	if r1 == 0 {
-		fmt.Println("Ошибка получения состояния сессии.")
 		return false, errors.New("Ошибка получения состояния сессии. WTSIsRemoteSession")
 	}
 	b := (*bool)(unsafe.Pointer(buffer))
