@@ -20,10 +20,7 @@ func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) (e error) {
 		// Подключение к системе D-Bus
 		conn, err := dbus.ConnectSessionBus()
 		if err != nil {
-			e = err
-			return
-			//log.Fatalf("Don`t connect D-Bus: %v", err)
-			//return err
+			return err
 		}
 		defer func() { _ = conn.Close() }()
 		param := l.getDbusParams()
@@ -33,8 +30,7 @@ func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) (e error) {
 			dbus.WithMatchMember(param.member),
 		)
 		if err != nil {
-			e = err
-			return
+			return err
 			//log.Fatalf("Error subscribe on event: %v", err)
 			//return err
 		}
@@ -45,6 +41,8 @@ func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) (e error) {
 
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case s := <-signals:
 				if len(s.Body) > 0 {
 					state, ok := s.Body[0].(bool)
@@ -56,14 +54,22 @@ func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) (e error) {
 						lock <- l
 					}
 				}
-			case <-ctx.Done():
-				return
 			}
-
 		}
 	}()
 
 	return nil
+}
+
+func IsRemoteSession() (bool, error) {
+	display := os.Getenv("DISPLAY")
+	if display == "" {
+		return false, error.New("Сессия не является графической (возможно, это консоль или SSH без X11).")
+	} else if display == ":0" || display == ":1" {
+		return false, nil
+	} else {
+		return true, nil
+	}
 }
 
 func (l *NotifyLock) getDbusParams() (p paramDBUS) {

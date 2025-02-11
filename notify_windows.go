@@ -45,7 +45,7 @@ func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) error {
 				var result bool
 				r0, _, msg := procCloseHandle.Call(uintptr(threadHandle), uintptr(unsafe.Pointer(&result)))
 				if r0 != 0 {
-					slog.Error("CloseHandle", slog.String("error", msg.Error()))
+					slog.Error("CloseHandle", slog.Any("error", msg))
 				}
 				return
 			case m := <-chanMessages:
@@ -86,7 +86,7 @@ func (l *NotifyLock) Subscribe(ctx context.Context, lock chan Lock) error {
 		var err error
 		threadHandle, err = l.start()
 		if err != nil {
-			slog.Error("CreateThread", slog.String("error", err.Error()))
+			slog.Error("CreateThread", slog.Any("error", err))
 		}
 	}()
 
@@ -104,7 +104,7 @@ func (l *NotifyLock) stop(hwnd HANDLE) {
 	r0, _, err0 := syscall.SyscallN(procTerminateThread.Addr(), 0, 0, uintptr(hwnd), 0, 0, 0)
 	err := int32(r0)
 	if err != 0 {
-		slog.Error("TerminateThread ", slog.String("error", err0.Error()))
+		slog.Error("TerminateThread ", slog.Any("error", err0.Error()))
 	}
 }
 
@@ -118,7 +118,7 @@ func (l *NotifyLock) watchSessionNotifications() uintptr {
 	}
 	_, err := RegisterClass(&wc)
 	if err != nil {
-		slog.Error("Error RegisterClass:", slog.String("error", err.Error()))
+		slog.Error("Error RegisterClass:", slog.Any("error", err))
 	}
 
 	hwnd, err = CreateWindowExW(lpClassName,
@@ -130,17 +130,17 @@ func (l *NotifyLock) watchSessionNotifications() uintptr {
 		100, 100,
 		0, 0, 0, 0)
 	if err != nil {
-		slog.Error("Error CreateWindow:", slog.String("error", err.Error()))
+		slog.Error("Error CreateWindow:", slog.Any("error", err))
 	}
 	slog.Debug("CreateWindow:", slog.String("handle", strconv.Itoa(int(hwnd))))
 	err = UpdateWindow(hwnd)
 	if err != nil {
-		slog.Error("UpdateWindow:", slog.String("error", err.Error()))
+		slog.Error("UpdateWindow:", slog.Any("error", err))
 	}
 
 	r0, _, err0 := procWTSRegisterSessionNotification.Call(uintptr(hwnd), NOTIFY_FOR_THIS_SESSION)
 	if r0 == 0 {
-		slog.Debug("Message WTSRegisterSessionNotification:", slog.String("msg", err0.Error()))
+		slog.Debug("Message WTSRegisterSessionNotification:", slog.Any("msg", err0.Error()))
 	}
 
 	msg := MSG{}
@@ -206,7 +206,7 @@ func getLockSession(sessionId uint32) (isLock bool, err error) {
 
 	if r1 == 0 {
 		err = errors.New("Error getting the session status.")
-		slog.Error("Getting the session status", slog.String("error", err.Error()))
+		slog.Error("Getting the session status", slog.Any("error", err))
 		return false, err
 	}
 	b := (*WTSINFOEXA)(unsafe.Pointer(buffer))
